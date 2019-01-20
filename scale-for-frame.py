@@ -10,12 +10,12 @@ from os import listdir, path
 from os.path import join, isdir, isfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageStat
+from PIL import Image, ImageDraw, ImageFont, ImageStat, ExifTags
 
-# workdir="C:/Uoers/Marcus/Documents/Photoframe"
-workDir = '/home/marcus/git/photoframescale/images'
+workDir="C:/Users/Marcus/Documents/Photoframe"
+# workDir = '/home/marcus/git/photoframescale/images'
 targetSize = 1024, 600
-fontName = 'LHANDW.TTF'
+fontName = 'segoeprb.ttf'
 initialFontSize = 32
 textBorder = (50, 50)
 textColorBright = (240, 240, 240)
@@ -65,6 +65,29 @@ def addCaptionToImage(im, captionText):
     draw.text(textStartPos, captiontext, textColor, font=captionFont)
     return im
 
+def applyImageRotationByEXIF(image):
+    "Get EXIF orientation information and rotate image accordingly"
+    orientation = 0
+    for orientation in ExifTags.TAGS.keys():
+        if ExifTags.TAGS[orientation]=='Orientation':
+            break
+
+    try:
+        exif=dict(image._getexif().items())
+        if exif[orientation] == 3:
+            resultImage=image.rotate(180, expand=True)
+        elif exif[orientation] == 6:
+            resultImage=image.rotate(270, expand=True)
+        elif exif[orientation] == 8:
+            resultImage=image.rotate(90, expand=True)
+        else:
+            resultImage = image
+    except AttributeError:
+        resultImage = image
+    except KeyError:
+        resultImage = image
+    return resultImage
+
 def convertTopicDir(fulltopicdir, fulltargetdir, captiontext):
     "Convert a directory full of .jpg / .jpeg files to scaled size"
     warnings.simplefilter('error', Image.DecompressionBombWarning)
@@ -73,9 +96,10 @@ def convertTopicDir(fulltopicdir, fulltargetdir, captiontext):
     for topicfile in topicfiles:
         fulltopicfile = join(fulltopicdir, topicfile)
         fulltargetfile = join(fulltargetdir, topicfile)
-        print("Converting", topicfile)
+        print("  Converting", topicfile)
         try:
             im = Image.open(fulltopicfile)
+            im = applyImageRotationByEXIF(im)
             im.thumbnail(targetSize, Image.ANTIALIAS)
             im = addCaptionToImage(im, captiontext)
             im.save(fulltargetfile, "JPEG")
