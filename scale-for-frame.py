@@ -9,10 +9,12 @@ import warnings
 from os import listdir, path
 from os.path import join, isdir, isfile
 from pathlib import Path
+from argparse import ArgumentParser
 
-from PIL import Image, ImageDraw, ImageFont, ImageStat, ExifTags
+from PIL import Image, ImageDraw, ImageFont, ImageStat
+from PIL.ExifTags import TAGS
 
-workDir="C:/Users/Marcus/Documents/Photoframe"
+defaultWorkDir="C:/Users/Marcus/Documents/Photoframe"
 # workDir = '/home/marcus/git/photoframescale/images'
 targetSize = 1024, 600
 fontName = 'segoeprb.ttf'
@@ -62,60 +64,79 @@ def addCaptionToImage(im, captionText):
     textSize = captionFont.getsize(captionText)
     textStartPos = imageSize[0] - textSize[0] - textBorder[0], imageSize[1] - textSize[1] - textBorder[1]
     textColor = getMatchingTextColor(im, textStartPos, textSize)
-    draw.text(textStartPos, captiontext, textColor, font=captionFont)
+    draw.text(textStartPos, captionText, textColor, font=captionFont)
     return im
 
-def applyImageRotationByEXIF(image):
-    "Get EXIF orientation information and rotate image accordingly"
-    orientation = 0
-    for orientation in ExifTags.TAGS.keys():
-        if ExifTags.TAGS[orientation]=='Orientation':
-            break
-
-    try:
-        exif=dict(image._getexif().items())
-        if exif[orientation] == 3:
-            resultImage=image.rotate(180, expand=True)
-        elif exif[orientation] == 6:
-            resultImage=image.rotate(270, expand=True)
-        elif exif[orientation] == 8:
-            resultImage=image.rotate(90, expand=True)
-        else:
-            resultImage = image
-    except AttributeError:
-        resultImage = image
-    except KeyError:
+def applyImageRotationByEXIF(image, exif_orientation):
+    "Rotate image according to exif orientation information"
+    if exif_orientation == 3:
+        resultImage=image.rotate(180, expand=True)
+    elif exif_orientation == 6:
+        resultImage=image.rotate(270, expand=True)
+    elif exif_orientation == 8:
+        resultImage=image.rotate(90, expand=True)
+    else:
         resultImage = image
     return resultImage
 
-def convertTopicDir(fulltopicdir, fulltargetdir, captiontext):
-    "Convert a directory full of .jpg / .jpeg files to scaled size"
+def convertTopicDir(fulltopicdir, fulltargetdir, phototopic):
+    "Convert a directory full of .jpg / .jpeg files to scaled size, adding photo captions"
     warnings.simplefilter('error', Image.DecompressionBombWarning)
     topicfiles = [f for f in listdir(fulltopicdir) if isfile(join(fulltopicdir, f)) \
                   and (f.lower().endswith(".jpg") or f.lower().endswith(".jpeg"))]
     for topicfile in topicfiles:
         fulltopicfile = join(fulltopicdir, topicfile)
         fulltargetfile = join(fulltargetdir, topicfile)
-        print("  Converting", topicfile)
+        print ( "  Converting", topicfile, ": ", end='')
         try:
             im = Image.open(fulltopicfile)
-            im = applyImageRotationByEXIF(im)
+
+            if (im._getexif() != None):
+                exif = {
+                    TAGS[k]: v
+                    for k, v in im._getexif().items()
+                    if k in TAGS
+                }
+            else:
+                exif = dict()
+
+            if 'Orientation' in exif:
+                im = applyImageRotationByEXIF(im, exif['Orientation'])
+
+            if 'ImageDescription' in exif:
+                photoDescription = exif['ImageDescription']
+                if (photoDescription == ''):
+                    photoCaption = phototopic
+                if (photoDescription.endswith('#')):
+                    photoCaption = photoDescription.rstrip('#')
+                else:
+                    photoCaption = phototopic + " - " + photoDescription
+            else:
+                photoCaption = phototopic
+
+            print (photoCaption)
             im.thumbnail(targetSize, Image.ANTIALIAS)
-            im = addCaptionToImage(im, captiontext)
+            im = addCaptionToImage(im, photoCaption)
             im.save(fulltargetfile, "JPEG")
         except IOError:
             print("cannot create target for '%s'" % fulltopicfile)
+        except AttributeError:
+            print("Attribute error for '%s'" % fulltopicfile)
 
 # --- main ---
+parser = ArgumentParser(description='Convert jpg images for a photo frame, scaling, rotating, and adding titles')
+parser.add_argument("-w", "--workdir", type=str, dest="workDir",
+                    help="define working directory", default=defaultWorkDir)
+args = parser.parse_args()
+workDir = args.workDir
 topicdirs = [f for f in listdir(workDir) if isdir(join(workDir, f)) and f.startswith("_")]
-
 print("Topic dirs are", topicdirs)
 
 for topicdir in topicdirs:
     targetdir = buildTargetDirName(topicdir)
-    captiontext = targetdir # change this if the caption should be different from the dir name
+    phototopic = targetdir # change this if the caption should be different from the dir name
     print("Convert and transfer from", topicdir, "to", targetdir)
     fulltopicdir = join(workDir, topicdir)
     fulltargetdir = join(workDir, targetdir)
     Path(fulltargetdir).mkdir(exist_ok=True)
-    convertTopicDir(fulltopicdir, fulltargetdir, captiontext)
+    convertTopicDir(fulltopicdir, fulltargetdir, phototopic)
