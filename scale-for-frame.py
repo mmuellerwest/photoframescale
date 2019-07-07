@@ -7,7 +7,7 @@
 #
 import warnings
 from os import listdir, path
-from os.path import join, isdir, isfile
+from os.path import join, isdir, isfile, getmtime
 from pathlib import Path
 from argparse import ArgumentParser
 
@@ -79,6 +79,16 @@ def applyImageRotationByEXIF(image, exif_orientation):
         resultImage = image
     return resultImage
 
+def exists_and_newer(targetfile, topicfile):
+    "Check if targetfile exists and if exists, if it's newer or same timestamp than topicfile"
+    try:
+        if getmtime(targetfile) >= getmtime(topicfile):
+            return True
+        else:
+            return False
+    except IOError:
+        return False
+
 def convertTopicDir(fulltopicdir, fulltargetdir, phototopic):
     "Convert a directory full of .jpg / .jpeg files to scaled size, adding photo captions"
     warnings.simplefilter('error', Image.DecompressionBombWarning)
@@ -87,41 +97,45 @@ def convertTopicDir(fulltopicdir, fulltargetdir, phototopic):
     for topicfile in topicfiles:
         fulltopicfile = join(fulltopicdir, topicfile)
         fulltargetfile = join(fulltargetdir, topicfile)
-        print ( "  Converting", topicfile, ": ", end='')
-        try:
-            im = Image.open(fulltopicfile)
+        if (not exists_and_newer(fulltargetfile, fulltopicfile)):
+            print ( "  Converting", topicfile, ": ", end='')
+            try:
+                im = Image.open(fulltopicfile)
 
-            if (im._getexif() != None):
-                exif = {
-                    TAGS[k]: v
-                    for k, v in im._getexif().items()
-                    if k in TAGS
-                }
-            else:
-                exif = dict()
-
-            if 'Orientation' in exif:
-                im = applyImageRotationByEXIF(im, exif['Orientation'])
-
-            if 'ImageDescription' in exif:
-                photoDescription = exif['ImageDescription']
-                if (photoDescription == ''):
-                    photoCaption = phototopic
-                if (photoDescription.endswith('#')):
-                    photoCaption = photoDescription.rstrip('#')
+                if (im._getexif() != None):
+                    exif = {
+                        TAGS[k]: v
+                        for k, v in im._getexif().items()
+                        if k in TAGS
+                    }
                 else:
-                    photoCaption = phototopic + " - " + photoDescription
-            else:
-                photoCaption = phototopic
+                    exif = dict()
 
-            print (photoCaption)
-            im.thumbnail(targetSize, Image.ANTIALIAS)
-            im = addCaptionToImage(im, photoCaption)
-            im.save(fulltargetfile, "JPEG")
-        except IOError:
-            print("cannot create target for '%s'" % fulltopicfile)
-        except AttributeError:
-            print("Attribute error for '%s'" % fulltopicfile)
+                if 'Orientation' in exif:
+                    im = applyImageRotationByEXIF(im, exif['Orientation'])
+
+                if 'ImageDescription' in exif:
+                    photoDescription = exif['ImageDescription']
+                    if (photoDescription.rstrip() == ''):
+                        photoCaption = phototopic
+                    else:
+                        if (photoDescription.endswith('#')):
+                            photoCaption = photoDescription.rstrip('#')
+                        else:
+                            photoCaption = phototopic + " - " + photoDescription
+                else:
+                    photoCaption = phototopic
+
+                print (photoCaption)
+                im.thumbnail(targetSize, Image.ANTIALIAS)
+                im = addCaptionToImage(im, photoCaption)
+                im.save(fulltargetfile, "JPEG")
+            except IOError:
+                print("cannot create target for '%s'" % fulltopicfile)
+            except AttributeError:
+                print("Attribute error for '%s'" % fulltopicfile)
+        else:
+            print ( "  Skipping", topicfile)
 
 # --- main ---
 parser = ArgumentParser(description='Convert jpg images for a photo frame, scaling, rotating, and adding titles')
@@ -129,10 +143,10 @@ parser.add_argument("-w", "--workdir", type=str, dest="workDir",
                     help="define working directory", default=defaultWorkDir)
 args = parser.parse_args()
 workDir = args.workDir
-topicdirs = [f for f in listdir(workDir) if isdir(join(workDir, f)) and f.startswith("_")]
-print("Topic dirs are", topicdirs)
+topicDirs = [f for f in listdir(workDir) if isdir(join(workDir, f)) and f.startswith("_")]
+print("Topic dirs are", topicDirs)
 
-for topicdir in topicdirs:
+for topicdir in topicDirs:
     targetdir = buildTargetDirName(topicdir)
     phototopic = targetdir # change this if the caption should be different from the dir name
     print("Convert and transfer from", topicdir, "to", targetdir)
