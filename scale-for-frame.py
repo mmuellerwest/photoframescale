@@ -124,13 +124,14 @@ def convert_topic_dir(full_topic_dir, full_target_dir, photo_topic):
 
                 if 'ImageDescription' in exif:
                     photo_description = exif['ImageDescription']
+                    photo_description = bytes(photo_description, encoding="ansi", errors="ignore").decode("utf-8", errors="ignore") # PIL reads exif data as ansi not utf-8 strings
                     if photo_description.rstrip() == '':
                         photo_caption = photo_topic
                     else:
                         if photo_description.endswith('#'):
-                            photo_caption = photo_description.rstrip('#')
+                            photo_caption = photo_topic + " - " + photo_description.rstrip('#')
                         else:
-                            photo_caption = photo_topic + " - " + photo_description
+                            photo_caption = photo_description
                 else:
                     photo_caption = photo_topic
 
